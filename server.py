@@ -54,13 +54,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_export(self, params):
         fmt = params.get("format", ["pdf"])[0]
         zoom = params.get("zoom", ["100"])[0]
+        scale = params.get("scale", ["2"])[0]
         duration = params.get("duration", ["4"])[0]
 
         if fmt not in ("pdf", "pptx", "mp4"):
             self.send_error(400, "Invalid format")
             return
 
-        print(f"  Exporting {fmt.upper()} (zoom={zoom}%)...")
+        print(f"  Exporting {fmt.upper()} (zoom={zoom}%, scale={scale}x)...")
 
         with tempfile.TemporaryDirectory(prefix="html2deck_") as tmpdir:
             output_base = str(Path(tmpdir) / "export")
@@ -69,6 +70,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 str(Path(self.html_file).resolve()),
                 "-f", fmt,
                 "--zoom", zoom,
+                "--scale", scale,
                 "-o", output_base,
             ]
             if fmt == "mp4":

@@ -84,6 +84,15 @@ iframe {
 
     <div class="sep"></div>
 
+    <label>Scale</label>
+    <select id="dscale">
+        <option value="2">2x (4K)</option>
+        <option value="3">3x (6K)</option>
+        <option value="4">4x (8K)</option>
+    </select>
+
+    <div class="sep"></div>
+
     <div class="actions">
         <button class="btn btn-pdf"  id="btn-pdf">PDF</button>
         <button class="btn btn-pptx" id="btn-pptx">PPTX</button>
@@ -145,7 +154,8 @@ function exportFile(fmt) {
     btn.textContent = 'Generating...';
     setStatus('Generating ' + fmt.toUpperCase() + ' at zoom ' + z + '%...', true);
 
-    var url = '/export?format=' + fmt + '&zoom=' + z + '&duration=4';
+    var sc = document.getElementById('dscale').value;
+    var url = '/export?format=' + fmt + '&zoom=' + z + '&scale=' + sc + '&duration=4';
 
     fetch(url)
         .then(function(resp) {
