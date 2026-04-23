@@ -20,6 +20,9 @@ body { background:#0f0f0f; color:#fff; font-family:system-ui,-apple-system,sans-
     background:#252525; color:#ccc; border:1px solid #333; padding:6px 10px;
     border-radius:6px; font-size:12px;
 }
+.bar select#filePicker {
+    max-width:280px; color:#fff; font-weight:600;
+}
 
 .actions { display:flex; gap:8px; }
 .btn {
@@ -39,9 +42,15 @@ body { background:#0f0f0f; color:#fff; font-family:system-ui,-apple-system,sans-
     flex:1; display:flex; align-items:center; justify-content:center;
     overflow:hidden; padding:16px; background:#0a0a0a;
 }
+.empty-state {
+    display:flex; flex-direction:column; align-items:center; gap:12px; color:#444;
+}
+.empty-state .icon { font-size:48px; }
+.empty-state p { font-size:14px; }
 iframe {
     background:#fff; border:1px solid #222; border-radius:6px;
     transform-origin:center center; box-shadow:0 20px 60px rgba(0,0,0,0.5);
+    display:none;
 }
 
 .status {
@@ -64,6 +73,13 @@ iframe {
 
 <div class="bar">
     <span class="logo">html2deck</span>
+    <div class="sep"></div>
+
+    <input type="file" id="filePicker" accept=".html,.htm" style="display:none;">
+    <button class="btn" id="btn-open"
+        style="background:#666; color:#fff; font-size:12px; padding:6px 16px;">Choose HTML file</button>
+    <span id="fileName" style="font-size:12px; color:#888; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+
     <div class="sep"></div>
 
     <label>Zoom</label>
@@ -94,26 +110,78 @@ iframe {
     <div class="sep"></div>
 
     <div class="actions">
-        <button class="btn btn-pdf"  id="btn-pdf">PDF</button>
-        <button class="btn btn-pptx" id="btn-pptx">PPTX</button>
-        <button class="btn btn-mp4"  id="btn-mp4">MP4</button>
+        <button class="btn btn-pdf"  id="btn-pdf" disabled>PDF</button>
+        <button class="btn btn-pptx" id="btn-pptx" disabled>PPTX</button>
+        <button class="btn btn-mp4"  id="btn-mp4" disabled>MP4</button>
     </div>
 </div>
 
-<div class="preview">
-    <iframe id="frame" src="{{HTML_NAME}}" scrolling="no"></iframe>
+<div class="preview" id="previewArea">
+    <div class="empty-state" id="emptyState">
+        <div class="icon">&#128196;</div>
+        <p>Select an HTML file above to preview</p>
+    </div>
+    <iframe id="frame" scrolling="no"></iframe>
 </div>
 
-<div class="status" id="status">Ready</div>
+<div class="status" id="status">Loading files...</div>
 <div class="toast" id="toast">Downloaded!</div>
 
 <script>
 var frame = document.getElementById('frame');
+var filePicker = document.getElementById('filePicker');
+var fileNameEl = document.getElementById('fileName');
 var slider = document.getElementById('zoom');
 var valEl = document.getElementById('zv');
 var scaleEl = document.getElementById('pscale');
 var statusEl = document.getElementById('status');
 var toastEl = document.getElementById('toast');
+var emptyState = document.getElementById('emptyState');
+var currentFile = null;
+
+setStatus('Click "Choose HTML file" to start');
+
+document.getElementById('btn-open').addEventListener('click', function() {
+    filePicker.click();
+});
+
+filePicker.addEventListener('change', function() {
+    var file = filePicker.files[0];
+    if (!file) return;
+
+    fileNameEl.textContent = file.name;
+    setStatus('Uploading ' + file.name + '...', true);
+
+    var reader = new FileReader();
+    reader.onload = function() {
+        fetch('/api/upload?name=' + encodeURIComponent(file.name), {
+            method: 'POST',
+            body: reader.result,
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            currentFile = data.path;
+            frame.src = '/api/serve?path=' + encodeURIComponent(data.path);
+            frame.style.display = 'block';
+            emptyState.style.display = 'none';
+            slider.value = 100;
+            valEl.textContent = '100%';
+            toggleButtons(true);
+            setStatus('Loaded: ' + file.name);
+        })
+        .catch(function(err) {
+            showToast('Error loading file');
+            setStatus('Failed to load', false);
+        });
+    };
+    reader.readAsArrayBuffer(file);
+});
+
+function toggleButtons(enabled) {
+    document.querySelectorAll('.actions .btn').forEach(function(b) {
+        b.disabled = !enabled;
+    });
+}
 
 function applyScale() {
     var s = parseFloat(scaleEl.value);
@@ -145,17 +213,17 @@ function setStatus(msg, active) {
 }
 
 function exportFile(fmt) {
+    if (!currentFile) return;
     var z = slider.value;
+    var sc = document.getElementById('dscale').value;
     var btn = document.getElementById('btn-' + fmt);
     var origText = btn.textContent;
 
-    // Disable all buttons
     document.querySelectorAll('.btn').forEach(function(b) { b.disabled = true; });
     btn.textContent = 'Generating...';
-    setStatus('Generating ' + fmt.toUpperCase() + ' at zoom ' + z + '%...', true);
+    setStatus('Generating ' + fmt.toUpperCase() + ' — ' + currentFile + ' (zoom ' + z + '%, scale ' + sc + 'x)...', true);
 
-    var sc = document.getElementById('dscale').value;
-    var url = '/export?format=' + fmt + '&zoom=' + z + '&scale=' + sc + '&duration=4';
+    var url = '/export?path=' + encodeURIComponent(currentFile) + '&format=' + fmt + '&zoom=' + z + '&scale=' + sc + '&duration=4';
 
     fetch(url)
         .then(function(resp) {
@@ -165,7 +233,7 @@ function exportFile(fmt) {
         .then(function(blob) {
             var a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = '{{HTML_NAME}}'.replace('.html', '.' + fmt);
+            a.download = currentFile.replace('.html', '.' + fmt);
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -178,7 +246,7 @@ function exportFile(fmt) {
             setStatus('Export failed', false);
         })
         .finally(function() {
-            document.querySelectorAll('.btn').forEach(function(b) { b.disabled = false; });
+            toggleButtons(true);
             btn.textContent = origText;
         });
 }
